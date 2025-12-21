@@ -76,7 +76,7 @@ else
   WIFI_COUNTRY=$(prompt_required "Wi-Fi country code (e.g. US, CA, DE)")
 fi
 
-LED_ENABLE=$(prompt_default "Enable LED status indicator? (yes/no)" "yes")
+LED_ENABLE=$(prompt_default "Enable LED status indicator? [yes/no]" "yes")
 
 NETBIRD_MGMT_URL=$(prompt_optional "NetBird management URL")
 NETBIRD_SETUP_KEY=$(prompt_required "NetBird setup key")
@@ -126,13 +126,15 @@ After=NetworkManager.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/sbin/rfkill unblock wifi
+ExecStart=/usr/sbin/rfkill unblock wlan
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
 sudo systemctl enable --now unblock-wifi.service
+
+sudo /usr/bin/rfkill unblock wlan
 
 ### =========================
 ### Bridge
@@ -275,6 +277,7 @@ fi
 ### Services
 ### =========================
 
+sudo systemctl unmask hostapd
 sudo systemctl enable hostapd dnsmasq
 sudo systemctl restart hostapd dnsmasq
 
