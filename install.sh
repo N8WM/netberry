@@ -361,10 +361,10 @@ echo "  Wi-Fi Country:     $WIFI_COUNTRY"
 echo "  AP channel:        $AP_CHANNEL"
 echo "  LED Indicator:     $LED_ENABLE"
 echo "  NetBird Mgmt URL:  ${NETBIRD_MGMT_URL:-[not set]}"
-echo "  NetBird Setup Key: [hidden]"
+echo "  NetBird Setup Key: ${NETBIRD_SETUP_KEY}"
 echo
 
-CONFIRM="$(prompt_yesno_default "Proceed with installation?" "no")"
+CONFIRM="$(prompt_yesno_default "Proceed with installation?" "yes")"
 [ "$CONFIRM" = "yes" ] || die "Installation cancelled by user."
 
 ### =========================
@@ -373,8 +373,12 @@ CONFIRM="$(prompt_yesno_default "Proceed with installation?" "no")"
 
 sudo apt update
 sudo apt install -y \
-  hostapd dnsmasq iptables-persistent \
-  iw curl jq rfkill ethtool
+  hostapd dnsmasq iw curl \
+  jq rfkill ethtool
+
+echo iptables-persistent iptables-persistent/autosave_v4 boolean true | sudo debconf-set-selections
+echo iptables-persistent iptables-persistent/autosave_v6 boolean true | sudo debconf-set-selections
+sudo apt install -y iptables-persistent
 
 ### =========================
 ### Regulatory domain (best-effort)
@@ -452,4 +456,5 @@ sudo systemctl restart hostapd dnsmasq
 echo
 echo "✔ Setup complete."
 echo "  AP interface: $AP_IFACE"
+echo "  Don't forget to provide your network to the new peer in NetBird!"
 echo "  Reboot recommended."
