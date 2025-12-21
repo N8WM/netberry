@@ -48,7 +48,7 @@ Netberry is installed via a **single interactive setup script**.
 In your Pi's terminal, run:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/N8WM/netberry/main/install.sh | sh
+sh <(curl -fsSL https://raw.githubusercontent.com/N8WM/netberry/main/install.sh)
 ```
 
 > This script should be run on a **fresh Raspberry Pi OS Lite install**.
