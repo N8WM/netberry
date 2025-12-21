@@ -34,10 +34,11 @@ prompt_required() {
 }
 
 detect_country() {
-  iw reg get 2>/dev/null |
-    awk '/country/ {print substr($2,1,2)}' |
-    head -n1
+  iw reg get 2>/dev/null | awk '/country/ {print substr($2,1,2)}' | head -n1
 }
+
+cidr_to_ip() { echo "$1" | cut -d/ -f1; }
+cidr_to_prefix() { echo "$1" | cut -d/ -f2; }
 
 ### =========================
 ### User input
@@ -48,26 +49,25 @@ AP_SSID=$(prompt_default "AP SSID" "Netberry")
 while true; do
   read -rsp "AP Passphrase (8–63 chars): " AP_PSK
   echo
-
   PSK_LEN=${#AP_PSK}
   if [ "$PSK_LEN" -lt 8 ] || [ "$PSK_LEN" -gt 63 ]; then
     echo "Passphrase must be between 8 and 63 characters."
     continue
   fi
-
   read -rsp "Confirm AP Passphrase: " AP_PSK_CONFIRM
   echo
-
   if [ "$AP_PSK" != "$AP_PSK_CONFIRM" ]; then
     echo "Passphrases do not match. Try again."
     continue
   fi
-
   break
 done
 
 LAN_CIDR=$(prompt_default "LAN CIDR" "192.168.50.1/24")
-LAN_NET="192.168.50.0/24"
+LAN_IP="$(cidr_to_ip "$LAN_CIDR")"
+LAN_PREFIX="$(cidr_to_prefix "$LAN_CIDR")"
+LAN_DHCP_START="192.168.50.10"
+LAN_DHCP_END="192.168.50.200"
 
 DETECTED_COUNTRY="$(detect_country || true)"
 if [ -n "$DETECTED_COUNTRY" ]; then
@@ -88,7 +88,7 @@ NETBIRD_SETUP_KEY=$(prompt_required "NetBird setup key")
 sudo apt update
 sudo apt install -y \
   hostapd dnsmasq iptables-persistent \
-  bridge-utils iw curl jq
+  iw curl jq rfkill
 
 ### =========================
 ### NetworkManager config
@@ -96,9 +96,10 @@ sudo apt install -y \
 
 sudo mkdir -p /etc/NetworkManager/conf.d
 
+# Keep NM for uplinks; don't let it touch AP interface
 sudo tee /etc/NetworkManager/conf.d/router-unmanaged.conf >/dev/null <<EOF
 [keyfile]
-unmanaged-devices=interface-name:wlan0;interface-name:br0
+unmanaged-devices=interface-name:wlan0
 EOF
 
 sudo tee /etc/NetworkManager/conf.d/wifi-powersave.conf >/dev/null <<EOF
@@ -116,55 +117,55 @@ sudo raspi-config nonint do_wifi_country "$WIFI_COUNTRY"
 sudo iw reg set "$WIFI_COUNTRY"
 
 ### =========================
-### RFKill fix
+### RFKill fix (Wi-Fi sometimes comes up soft-blocked)
 ### =========================
 
 sudo tee /etc/systemd/system/unblock-wifi.service >/dev/null <<EOF
 [Unit]
 Description=Unblock WiFi after NetworkManager
 After=NetworkManager.service
+Wants=NetworkManager.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/sbin/rfkill unblock wlan
+ExecStart=/usr/sbin/rfkill unblock wifi
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
 sudo systemctl enable --now unblock-wifi.service
-
-sudo /usr/bin/rfkill unblock wlan
+sudo rfkill unblock wifi || true
 
 ### =========================
-### Bridge
+### Assign static LAN IP to wlan0 (no bridge, no systemd-networkd)
 ### =========================
 
-sudo systemctl enable --now systemd-networkd
+sudo tee /etc/systemd/system/netberry-wlan0-ip.service >/dev/null <<EOF
+[Unit]
+Description=Assign static LAN IP to wlan0 for Netberry AP
+After=NetworkManager.service unblock-wifi.service
+Wants=NetworkManager.service unblock-wifi.service
+Before=hostapd.service dnsmasq.service
 
-sudo tee /etc/systemd/network/br0.netdev >/dev/null <<EOF
-[NetDev]
-Name=br0
-Kind=bridge
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/ip link set wlan0 up
+ExecStart=/usr/sbin/ip addr flush dev wlan0
+ExecStart=/usr/sbin/ip addr add ${LAN_IP}/${LAN_PREFIX} dev wlan0
+
+[Install]
+WantedBy=multi-user.target
 EOF
 
-sudo tee /etc/systemd/network/br0.network >/dev/null <<EOF
-[Match]
-Name=br0
-
-[Network]
-Address=$LAN_CIDR
-EOF
-
-sudo systemctl restart systemd-networkd
+sudo systemctl enable --now netberry-wlan0-ip.service
 
 ### =========================
-### hostapd
+### hostapd (AP on wlan0, routed/NAT)
 ### =========================
 
 sudo tee /etc/hostapd/hostapd.conf >/dev/null <<EOF
 interface=wlan0
-bridge=br0
 driver=nl80211
 ssid=$AP_SSID
 hw_mode=g
@@ -181,14 +182,18 @@ EOF
 sudo sed -i 's|^#\?DAEMON_CONF=.*|DAEMON_CONF="/etc/hostapd/hostapd.conf"|' /etc/default/hostapd
 
 ### =========================
-### dnsmasq
+### dnsmasq (DHCP/DNS on wlan0; explicit router + dns options)
 ### =========================
 
 sudo mv /etc/dnsmasq.conf /etc/dnsmasq.conf.orig 2>/dev/null || true
 sudo tee /etc/dnsmasq.conf >/dev/null <<EOF
-interface=br0
+interface=wlan0
 bind-interfaces
-dhcp-range=192.168.50.10,192.168.50.200,12h
+
+dhcp-range=${LAN_DHCP_START},${LAN_DHCP_END},12h
+dhcp-option=option:router,${LAN_IP}
+dhcp-option=option:dns-server,${LAN_IP}
+
 domain-needed
 bogus-priv
 EOF
@@ -197,7 +202,7 @@ EOF
 ### Routing
 ### =========================
 
-echo 'net.ipv4.ip_forward=1' | sudo tee /etc/sysctl.d/99-router.conf
+echo 'net.ipv4.ip_forward=1' | sudo tee /etc/sysctl.d/99-router.conf >/dev/null
 sudo sysctl --system
 
 ### =========================
@@ -213,16 +218,19 @@ sudo "${NETBIRD_CMD[@]}"
 sudo systemctl enable netbird
 
 ### =========================
-### Firewall (client-only kill-switch)
+### Firewall (client-only kill-switch; LAN is wlan0 now)
 ### =========================
 
 sudo iptables -F
 sudo iptables -t nat -F
 
+# NAT clients out the NetBird tunnel only
 sudo iptables -t nat -A POSTROUTING -o wt0 -j MASQUERADE
-sudo iptables -A FORWARD -i br0 -o wt0 -j ACCEPT
-sudo iptables -A FORWARD -i wt0 -o br0 -m state --state RELATED,ESTABLISHED -j ACCEPT
-sudo iptables -A FORWARD -i br0 ! -o wt0 -j DROP
+
+# Allow client -> VPN, return traffic back, block client -> non-VPN
+sudo iptables -A FORWARD -i wlan0 -o wt0 -j ACCEPT
+sudo iptables -A FORWARD -i wt0 -o wlan0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+sudo iptables -A FORWARD -i wlan0 ! -o wt0 -j DROP
 
 sudo netfilter-persistent save
 
@@ -277,7 +285,7 @@ fi
 ### Services
 ### =========================
 
-sudo systemctl unmask hostapd
+sudo systemctl unmask hostapd || true
 sudo systemctl enable hostapd dnsmasq
 sudo systemctl restart hostapd dnsmasq
 
