@@ -240,16 +240,24 @@ install_netbird() {
 
 install_firewall() {
   local ap_iface="$1"
-  # Flush + install minimal client-only kill-switch:
-  # - Clients (AP iface) may only forward to wt0
-  # - NAT out wt0
+
+  # Flush tables
   sudo iptables -F
   sudo iptables -t nat -F
+  sudo iptables -t mangle -F
 
+  sudo iptables -P FORWARD ACCEPT
+
+  # Mark client traffic so NetBird routes it
+  # (matches NetBird's fwmark seen in `ip rule show`)
+  sudo iptables -t mangle -A PREROUTING -i "${ap_iface}" -j MARK --set-mark 0x1bd00
+
+  # NAT traffic existing via the NetBird tunnel
   sudo iptables -t nat -A POSTROUTING -o wt0 -j MASQUERADE
+
+  # Allow forwarding via the tunnel
   sudo iptables -A FORWARD -i "${ap_iface}" -o wt0 -j ACCEPT
   sudo iptables -A FORWARD -i wt0 -o "${ap_iface}" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
-  sudo iptables -A FORWARD -i "${ap_iface}" ! -o wt0 -j DROP
 
   sudo netfilter-persistent save
 }
