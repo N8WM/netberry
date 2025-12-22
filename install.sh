@@ -265,49 +265,8 @@ install_firewall() {
   sudo netfilter-persistent save
 }
 
-verify_dataplane() {
-  local ap_iface="$1"
-  echo
-  echo "Verifying NetBird dataplane (best-effort)..."
-
-  if ! ip link show wt0 >/dev/null 2>&1; then
-    echo "WARNING: wt0 not present yet. NetBird may not be connected."
-    return 0
-  fi
-
-  if ip rule show | grep -Eq "fwmark ${NETBIRD_MARK} .* lookup ${NETBIRD_TABLE}"; then
-    echo "✓ ip rule: fwmark ${NETBIRD_MARK} -> table ${NETBIRD_TABLE}"
-  else
-    echo "WARNING: ip rule for fwmark ${NETBIRD_MARK} -> table ${NETBIRD_TABLE} not found."
-    echo "         Current rules:"
-    ip rule show | sed 's/^/         /'
-  fi
-
-  if ip route show table "${NETBIRD_TABLE}" 2>/dev/null | grep -q "default dev wt0"; then
-    echo "✓ table ${NETBIRD_TABLE}: default via wt0"
-  else
-    echo "WARNING: table ${NETBIRD_TABLE} does not show 'default dev wt0'."
-    echo "         table contents:"
-    ip route show table "${NETBIRD_TABLE}" 2>/dev/null | sed 's/^/         /' || true
-  fi
-
-  if ip route get 1.1.1.1 mark "${NETBIRD_MARK}" 2>/dev/null | grep -q "dev wt0"; then
-    echo "✓ route-get: marked traffic selects wt0"
-  else
-    echo "WARNING: route-get: marked traffic did not select wt0."
-    echo "         Output:"
-    ip route get 1.1.1.1 mark "${NETBIRD_MARK}" 2>/dev/null | sed 's/^/         /' || true
-  fi
-
-  # NAT counters only move once a client generates traffic
-  if iptables -t nat -vnL POSTROUTING 2>/dev/null | grep -q "wt0"; then
-    echo "✓ iptables: POSTROUTING contains wt0 NAT rule (counters require client traffic)"
-  else
-    echo "WARNING: iptables: expected POSTROUTING wt0 NAT rule not found."
-  fi
-
-  echo "NOTE: For end-to-end validation, connect a client to the AP and browse to a home LAN IP."
-  echo
+doctor() {
+  bash $HOME/netbird-doctor.sh
 }
 
 install_led_logic() {
@@ -405,20 +364,22 @@ NETBIRD_SETUP_KEY="$(prompt_required "NetBird setup key")"
 
 echo
 echo "Starting installation with the following settings:"
-echo "  AP SSID:           $AP_SSID"
-echo "  AP Passphrase:     [hidden]"
-echo "  LAN CIDR:          $LAN_CIDR"
-echo "  DHCP range:        $LAN_DHCP_START - $LAN_DHCP_END"
-echo "  Wi-Fi Country:     $WIFI_COUNTRY"
-echo "  AP channel:        $AP_CHANNEL"
-echo "  LED Indicator:     $LED_ENABLE"
-echo "  NetBird Mgmt URL:  ${NETBIRD_MGMT_URL:-[not set]}"
-echo "  NetBird Setup Key: [hidden]"
+echo "  AP SSID:            $AP_SSID"
+echo "  AP Passphrase:      [hidden]"
+echo "  LAN CIDR:           $LAN_CIDR"
+echo "  DHCP range:         $LAN_DHCP_START - $LAN_DHCP_END"
+echo "  Wi-Fi Country:      $WIFI_COUNTRY"
+echo "  AP channel:         $AP_CHANNEL"
+echo "  LED Indicator:      $LED_ENABLE"
+echo "  NetBird Mgmt URL:   ${NETBIRD_MGMT_URL:-[not set]}"
+echo "  NetBird Setup Key:  [hidden]"
 echo "  NetBird mark/table: ${NETBIRD_MARK} / ${NETBIRD_TABLE}"
 echo
 
 CONFIRM="$(prompt_yesno_default "Proceed with installation?" "yes")"
 [ "$CONFIRM" = "yes" ] || die "Installation cancelled by user."
+
+echo
 
 ### =========================
 ### Packages
@@ -432,6 +393,15 @@ sudo apt install -y \
 echo iptables-persistent iptables-persistent/autosave_v4 boolean true | sudo debconf-set-selections
 echo iptables-persistent iptables-persistent/autosave_v6 boolean true | sudo debconf-set-selections
 sudo apt install -y iptables-persistent
+
+### =========================
+### Doctor script
+### =========================
+
+curl -fsSL https://raw.githubusercontent.com/N8WM/netberry/main/doctor.sh \
+  -o $HOME/netbird-doctor.sh
+
+sudo chmod +x $HOME/netbird-doctor.sh
 
 ### =========================
 ### Regulatory domain (best-effort)
@@ -453,7 +423,8 @@ echo "Selected AP interface: $AP_IFACE (driver: ${AP_DRV:-unknown})"
 
 if [ "${AP_DRV:-}" = "brcmfmac" ]; then
   echo "WARNING: Selected interface uses brcmfmac (Pi built-in Wi-Fi)."
-  echo "         AP mode may be unstable on newer kernels. A USB Wi-Fi adapter is strongly recommended."
+  echo "         AP mode may be unstable on newer kernels."
+  echo "         A USB Wi-Fi adapter is strongly recommended."
   CONT="$(prompt_yesno_default "Continue anyway using $AP_IFACE?" "no")"
   [ "$CONT" = "yes" ] || die "Aborted. Plug in a USB Wi-Fi adapter and rerun."
 fi
@@ -505,10 +476,11 @@ sudo systemctl unmask hostapd >/dev/null 2>&1 || true
 sudo systemctl enable hostapd dnsmasq
 sudo systemctl restart hostapd dnsmasq
 
-verify_dataplane "$AP_IFACE"
+doctor "$AP_IFACE"
 
 echo
+echo "AP interface: $AP_IFACE"
+echo "Don't forget to provide your network to the new peer in NetBird!"
+echo "Reboot recommended."
+echo
 echo "✔ Setup complete."
-echo "  AP interface: $AP_IFACE"
-echo "  Don't forget to provide your network to the new peer in NetBird!"
-echo "  Reboot recommended."
