@@ -252,6 +252,26 @@ install_netbird() {
   sudo systemctl enable netbird
 }
 
+install_policy_rule_service() {
+  sudo tee /etc/systemd/system/netberry-policy-routing.service >/dev/null <<EOF
+[Unit]
+Description=Netberry policy routing (fwmark ${NETBIRD_MARK} → table ${NETBIRD_TABLE})
+After=network-online.target netbird.service
+Wants=network-online.target netbird.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/ip rule add pref 100 fwmark ${NETBIRD_MARK} lookup ${NETBIRD_TABLE}
+ExecStart=/usr/sbin/ip route flush cache
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now netberry-policy-routing.service
+}
+
 install_firewall() {
   local ap_iface="$1"
 
@@ -464,6 +484,7 @@ install_dnsmasq "$AP_IFACE" "$LAN_IP" "$LAN_DHCP_START" "$LAN_DHCP_END"
 
 install_sysctl_forwarding
 install_netbird "$NETBIRD_MGMT_URL" "$NETBIRD_SETUP_KEY"
+install_policy_rule_service
 install_firewall "$AP_IFACE"
 
 ### =========================

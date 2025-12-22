@@ -9,7 +9,7 @@ FAILURES=0
 
 ok() { echo "✔ $*"; }
 warn() { echo "⚠ $*"; }
-detail() { echo "  > $*"; }
+info() { echo "  > $*"; }
 fail() {
   echo "✖ $*"
   FAILURES=$((FAILURES + 1))
@@ -42,7 +42,7 @@ AP_IFACE="$(
 
 [ -n "$AP_IFACE" ] || {
   fail "No AP interface detected"
-  detail "iw dev shows no type AP"
+  info "iw dev shows no type AP"
   exit 1
 }
 
@@ -56,8 +56,8 @@ if netbird status --json | jq -e '.management.connected == true' >/dev/null; the
   ok "NetBird management connected"
 else
   fail "NetBird management not connected"
-  detail "Sometimes this can be a false positive"
-  detail "Check management connection again with \`netbird status\`"
+  info "Sometimes this can be a false positive"
+  info "Check management connection again with \`netbird status\`"
 fi
 
 if ip link show wt0 >/dev/null 2>&1; then
@@ -84,7 +84,7 @@ if journalctl -u dnsmasq --no-pager 2>/dev/null | grep -q "DHCPACK"; then
   ok "dnsmasq has issued DHCP leases"
 else
   warn "No DHCP leases observed yet"
-  detail "May be idle"
+  info "May be idle"
 fi
 
 ### =========================
@@ -98,6 +98,7 @@ if ip rule show | grep -q "fwmark $NETBIRD_MARK.*lookup $NETBIRD_TABLE"; then
   ok "Policy rule fwmark $NETBIRD_MARK → table $NETBIRD_TABLE present"
 else
   fail "Policy routing rule missing for fwmark $NETBIRD_MARK"
+  info "Try: sudo systemctl restart netberry-policy-routing.service"
 fi
 
 if ip route show table "$NETBIRD_TABLE" | grep -q "default.*wt0"; then
@@ -119,7 +120,7 @@ if [ -n "$MANGLE_PKTS" ] && [ "$MANGLE_PKTS" -gt 0 ]; then
   ok "Client traffic is being marked (packets: $MANGLE_PKTS)"
 else
   warn "No marked client packets yet"
-  detail "Connect a client and retry"
+  info "Connect a client and retry"
 fi
 
 ### =========================
@@ -135,7 +136,7 @@ if [ -n "$NAT_PKTS" ] && [ "$NAT_PKTS" -gt 0 ]; then
   ok "NAT activity detected on wt0 (packets: $NAT_PKTS)"
 else
   warn "No NAT packets yet"
-  detail "Connect a client and retry"
+  info "Connect a client and retry"
 fi
 
 ### =========================
@@ -170,7 +171,7 @@ if [ -n "$PREROUTING_PKTS" ] && [ "$PREROUTING_PKTS" -gt 0 ] &&
   ok "Forwarded client traffic is marked and NATed via wt0"
 else
   warn "No forwarded traffic observed yet"
-  detail "Connect a client and retry"
+  info "Connect a client and retry"
 fi
 
 ### =========================
