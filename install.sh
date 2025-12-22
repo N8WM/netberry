@@ -7,6 +7,18 @@ set -euo pipefail
 # - Keep NetworkManager for uplinks (Ethernet/Wi-Fi uplink later), but keep it away from the AP interface.
 # - No bridges/systemd-networkd. Routed AP + NAT through NetBird (wt0).
 # - Minimal “fixup” logic: no aggressive rfkill/NM radio hacks. Just correct ownership & ordering.
+#
+# NetBird dataplane notes (Trixie + iptables-nft):
+# - Mark client packets with NETBIRD_MARK so NetBird's nftables ACL/NAT applies.
+# - Add a policy rule to NETBIRD_TABLE so marked traffic routes via wt0.
+# - Do NOT rely on FORWARD-chain rules (NetBird manages nftables in the forward path).
+
+### =========================
+### Constants
+### =========================
+
+NETBIRD_MARK="0x1bd22"
+NETBIRD_TABLE="7120"
 
 ### =========================
 ### Helpers
@@ -80,7 +92,6 @@ iface_driver_module() {
     mod="$(ethtool -i "$iface" 2>/dev/null | awk -F': ' '$1=="driver"{print $2}' | head -n1 || true)"
   fi
   if [ -z "$mod" ]; then
-    # Fallback: /sys path
     local drv_link="/sys/class/net/${iface}/device/driver/module"
     if [ -e "$drv_link" ]; then
       mod="$(basename "$(readlink -f "$drv_link")" 2>/dev/null || true)"
@@ -128,7 +139,6 @@ EOF
 
   sudo systemctl restart NetworkManager
 
-  # Runtime hint (works when NM sees device as managed)
   if command -v nmcli >/dev/null 2>&1; then
     sudo nmcli dev set "$iface" managed no >/dev/null 2>&1 || true
   fi
@@ -177,15 +187,10 @@ wpa_key_mgmt=WPA-PSK
 rsn_pairwise=CCMP
 EOF
 
-  # Ensure hostapd reads our config
   if [ -f /etc/default/hostapd ]; then
     sudo sed -i 's|^#\?DAEMON_CONF=.*|DAEMON_CONF="/etc/hostapd/hostapd.conf"|' /etc/default/hostapd
-  else
-    # Some images may not ship /etc/default/hostapd; systemd unit already sets DAEMON_CONF.
-    :
   fi
 
-  # Ensure hostapd starts after IP assignment (avoids races)
   sudo mkdir -p /etc/systemd/system/hostapd.service.d
   sudo tee /etc/systemd/system/hostapd.service.d/netberry-ordering.conf >/dev/null <<EOF
 [Unit]
@@ -211,7 +216,6 @@ domain-needed
 bogus-priv
 EOF
 
-  # Ensure dnsmasq starts after IP assignment
   sudo mkdir -p /etc/systemd/system/dnsmasq.service.d
   sudo tee /etc/systemd/system/dnsmasq.service.d/netberry-ordering.conf >/dev/null <<EOF
 [Unit]
@@ -241,29 +245,72 @@ install_netbird() {
 install_firewall() {
   local ap_iface="$1"
 
-  # Flush tables
   sudo iptables -F
   sudo iptables -t nat -F
   sudo iptables -t mangle -F
 
-  sudo iptables -P FORWARD ACCEPT
+  # Mark client traffic so NetBird's nftables ACL+NAT applies.
+  # Current known-good mark/table for Trixie + NetBird:
+  #   mark:  0x1bd22
+  #   table: 7120
+  sudo iptables -t mangle -A PREROUTING -i "${ap_iface}" -j MARK --set-mark "${NETBIRD_MARK}"
 
-  # Mark client traffic so NetBird routes it
-  # (matches NetBird's fwmark seen in `ip rule show`)
-  sudo iptables -t mangle -A PREROUTING -i "${ap_iface}" -j MARK --set-mark 0x1bd00
+  # Ensure policy routing exists for that mark -> table (best-effort)
+  sudo ip rule add pref 100 fwmark "${NETBIRD_MARK}" lookup "${NETBIRD_TABLE}" 2>/dev/null || true
+  sudo ip route flush cache || true
 
-  # NAT traffic existing via the NetBird tunnel
+  # Safety NAT on our side (NetBird also NATs internally); harmless to keep.
   sudo iptables -t nat -A POSTROUTING -o wt0 -j MASQUERADE
-
-  # Allow forwarding via the tunnel
-  sudo iptables -A FORWARD -i "${ap_iface}" -o wt0 -j ACCEPT
-  sudo iptables -A FORWARD -i wt0 -o "${ap_iface}" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 
   sudo netfilter-persistent save
 }
 
+verify_dataplane() {
+  local ap_iface="$1"
+  echo
+  echo "Verifying NetBird dataplane (best-effort)..."
+
+  if ! ip link show wt0 >/dev/null 2>&1; then
+    echo "WARNING: wt0 not present yet. NetBird may not be connected."
+    return 0
+  fi
+
+  if ip rule show | grep -Eq "fwmark ${NETBIRD_MARK} .* lookup ${NETBIRD_TABLE}"; then
+    echo "✓ ip rule: fwmark ${NETBIRD_MARK} -> table ${NETBIRD_TABLE}"
+  else
+    echo "WARNING: ip rule for fwmark ${NETBIRD_MARK} -> table ${NETBIRD_TABLE} not found."
+    echo "         Current rules:"
+    ip rule show | sed 's/^/         /'
+  fi
+
+  if ip route show table "${NETBIRD_TABLE}" 2>/dev/null | grep -q "default dev wt0"; then
+    echo "✓ table ${NETBIRD_TABLE}: default via wt0"
+  else
+    echo "WARNING: table ${NETBIRD_TABLE} does not show 'default dev wt0'."
+    echo "         table contents:"
+    ip route show table "${NETBIRD_TABLE}" 2>/dev/null | sed 's/^/         /' || true
+  fi
+
+  if ip route get 1.1.1.1 mark "${NETBIRD_MARK}" 2>/dev/null | grep -q "dev wt0"; then
+    echo "✓ route-get: marked traffic selects wt0"
+  else
+    echo "WARNING: route-get: marked traffic did not select wt0."
+    echo "         Output:"
+    ip route get 1.1.1.1 mark "${NETBIRD_MARK}" 2>/dev/null | sed 's/^/         /' || true
+  fi
+
+  # NAT counters only move once a client generates traffic
+  if iptables -t nat -vnL POSTROUTING 2>/dev/null | grep -q "wt0"; then
+    echo "✓ iptables: POSTROUTING contains wt0 NAT rule (counters require client traffic)"
+  else
+    echo "WARNING: iptables: expected POSTROUTING wt0 NAT rule not found."
+  fi
+
+  echo "NOTE: For end-to-end validation, connect a client to the AP and browse to a home LAN IP."
+  echo
+}
+
 install_led_logic() {
-  # Uses ACT LED; flips to solid-on after N consecutive failures; heartbeat on success.
   sudo tee /usr/local/bin/netbird-led.sh >/dev/null <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -277,12 +324,10 @@ bad() { echo none > "$LED/trigger"; echo 1 > "$LED/brightness"; }
 
 fails=0; [ -f "$STATE" ] && fails=$(cat "$STATE")
 
-# Require the data plane interface
 if ! ip link show wt0 >/dev/null 2>&1; then
   fails=$((fails+1)); echo "$fails" > "$STATE"; [ "$fails" -ge "$MAX" ] && bad; exit 0
 fi
 
-# Simple connectivity check: DNS resolution via system resolver
 if getent hosts netbird.io >/dev/null 2>&1; then
   ok
   exit 0
@@ -351,7 +396,6 @@ else
   WIFI_COUNTRY="$(prompt_required "Wi-Fi country code (e.g. US, CA, DE)")"
 fi
 
-# Keep radio settings conservative for broad compatibility
 AP_CHANNEL="$(prompt_default "AP channel (2.4 GHz; 1/6/11 recommended)" "1")"
 
 LED_ENABLE="$(prompt_yesno_default "Enable LED status indicator?" "yes")"
@@ -369,7 +413,8 @@ echo "  Wi-Fi Country:     $WIFI_COUNTRY"
 echo "  AP channel:        $AP_CHANNEL"
 echo "  LED Indicator:     $LED_ENABLE"
 echo "  NetBird Mgmt URL:  ${NETBIRD_MGMT_URL:-[not set]}"
-echo "  NetBird Setup Key: ${NETBIRD_SETUP_KEY}"
+echo "  NetBird Setup Key: [hidden]"
+echo "  NetBird mark/table: ${NETBIRD_MARK} / ${NETBIRD_TABLE}"
 echo
 
 CONFIRM="$(prompt_yesno_default "Proceed with installation?" "yes")"
@@ -445,7 +490,6 @@ install_firewall "$AP_IFACE"
 ### =========================
 
 if [ "$LED_ENABLE" = "yes" ]; then
-  # Only install if the LED path exists
   if [ -d /sys/class/leds/ACT ]; then
     install_led_logic
   else
@@ -460,6 +504,8 @@ fi
 sudo systemctl unmask hostapd >/dev/null 2>&1 || true
 sudo systemctl enable hostapd dnsmasq
 sudo systemctl restart hostapd dnsmasq
+
+verify_dataplane "$AP_IFACE"
 
 echo
 echo "✔ Setup complete."
