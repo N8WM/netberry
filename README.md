@@ -2,7 +2,7 @@
 
 **A DIY Raspberry Pi travel router with enforced NetBird VPN routing**
 
-Netberry turns a Raspberry Pi into a portable Wi-Fi access point that **forces all connected client traffic through NetBird**, providing secure, consistent access to your home network or exit node — without installing VPN software on each device.
+Netberry turns a Raspberry Pi into a portable Wi-Fi access point that **forces all connected client traffic through NetBird**, providing secure, consistent access to your home network or exit node, all without installing VPN software on each device.
 
 You connect the Pi to an upstream network (typically Ethernet), connect your devices to Netberry’s Wi-Fi, and all client traffic is routed through NetBird.
 
@@ -15,7 +15,7 @@ You connect the Pi to an upstream network (typically Ethernet), connect your dev
   Creates a WPA2-protected Wi-Fi network for client devices.
 
 - **NetworkManager-based uplinks**  
-  Ethernet is used as the primary uplink (Wi-Fi uplink planned).
+  Ethernet is used as the primary uplink (Wi-Fi uplink can be configured).
 
 - **No client VPN software required**  
   Works with devices that cannot install VPNs (TVs, consoles, work laptops).
@@ -54,15 +54,6 @@ On a fresh Raspberry Pi OS Lite install:
 ```
 bash <(curl -fsSL https://raw.githubusercontent.com/N8WM/netberry/main/install.sh)
 ```
-
-The installer will:
-
-- Select an appropriate Wi-Fi interface for AP mode  
-- Configure hostapd and dnsmasq  
-- Install and enroll NetBird  
-- Set up policy routing and NAT  
-- Optionally enable LED health signaling  
-- Install a diagnostic tool (`doctor.sh`)  
 
 ## How it works (high level)
 
@@ -116,7 +107,7 @@ This checks:
 - NAT via the tunnel  
 - DNS resolution  
 
-It is safe to run at any time and is also used by the LED logic.
+It is safe to run at any time.
 
 ## Recovery & safety guarantees
 
