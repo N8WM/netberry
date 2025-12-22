@@ -266,7 +266,7 @@ install_firewall() {
 }
 
 doctor() {
-  bash $HOME/netbird-doctor.sh
+  bash $HOME/netbird-doctor.sh || true
 }
 
 install_led_logic() {

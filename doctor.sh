@@ -50,7 +50,7 @@ ok "AP interface detected: $AP_IFACE"
 ### Phase 1 — NetBird status
 ### =========================
 
-if $(netbird status --json 2>/dev/null | jq -e '.management.connected'); then
+if netbird status --json | jq -e '.management.connected == true' >/dev/null; then
   ok "NetBird management connected"
 else
   fail "NetBird management not connected"

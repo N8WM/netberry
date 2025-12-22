@@ -1,91 +1,149 @@
 # Netberry
 
-**A DIY Raspberry Pi travel router with NetBird VPN enforcement**
+**A DIY Raspberry Pi travel router with enforced NetBird VPN routing**
 
-Netberry turns a Raspberry Pi into a portable Wi-Fi access point that **forces all connected devices to route traffic through NetBird**, giving you secure, consistent access to your home network from anywhere—without installing VPN clients on each device.
+Netberry turns a Raspberry Pi into a portable Wi-Fi access point that **forces all connected client traffic through NetBird**, providing secure, consistent access to your home network or exit node — without installing VPN software on each device.
 
-Connect your Pi to an available network and your devices to its Wi-Fi access point, and all traffic is tunneled through NetBird.
+You connect the Pi to an upstream network (typically Ethernet), connect your devices to Netberry’s Wi-Fi, and all client traffic is routed through NetBird.
+
+---
 
 ## Key features
 
-- **VPN-enforced routing**  
-  All client traffic is forced through NetBird (kill-switch enabled).
+- **VPN-enforced client routing**  
+  Client traffic is fail-closed and cannot reach the internet unless NetBird is up.
 
-- **Wi-Fi access point**  
-  Creates its own WPA2-protected Wi-Fi network.
+- **Dedicated Wi-Fi access point**  
+  Creates a WPA2-protected Wi-Fi network for client devices.
 
-- **Ethernet for uplink**  
-  Ethernet is used for internet access.  
-  *Wired clients are supported but require a USB Wi-Fi adapter for uplink and Wi-Fi security configuration.*
+- **NetworkManager-based uplinks**  
+  Ethernet is used as the primary uplink (Wi-Fi uplink planned).
 
-- **No client software required**  
-  Works with devices that cannot install VPNs.
+- **No client VPN software required**  
+  Works with devices that cannot install VPNs (TVs, consoles, work laptops).
 
-- **Hardware LED status indicator**  
-  The Pi’s ACT LED shows *real usability* (VPN + routing + DNS), not just “connected”.
+- **Health-aware hardware LED**  
+  The Pi’s ACT LED reflects *actual usability* (VPN + routing + DNS), not just tunnel state.
+
+- **Deterministic validation**  
+  Includes a built-in diagnostic script (`doctor.sh`) to verify routing, NAT, policy rules, and NetBird state.
+
+---
 
 ## Use cases
 
-- Travel with a work-issued laptop
-- Secure hotel or Airbnb Wi-Fi
-- Shared VPN access for multiple devices
-- Temporary remote access to a home lab or LAN
+- Traveling with locked-down or work-issued devices  
+- Securing hotel or Airbnb Wi-Fi  
+- Sharing a single VPN tunnel with multiple devices  
+- Temporary remote access to a home lab or LAN  
+
+---
 
 ## Requirements
 
-- An existing NetBird account with a configured exit node
-- Raspberry Pi (tested on Pi 4 / Pi 5)
-- Raspberry Pi OS Lite (64-bit)
-- MicroSD card
-- Power supply
-- Ethernet cable (for wired uplink)
-- Optional: USB Wi-Fi adapter (for future Wi-Fi uplink support)
+- An existing NetBird account with an exit node or exposed subnet  
+- Raspberry Pi (tested on Pi 4 and Pi 5)  
+- Raspberry Pi OS Lite (64-bit, Debian Trixie)  
+- MicroSD card + power supply  
+- **Ethernet connection for uplink**  
+- **Strongly recommended:** USB Wi-Fi adapter for AP mode  
+
+> The Raspberry Pi’s built-in Wi-Fi (`brcmfmac`) can be unstable in AP mode on newer kernels.  
+> Netberry prefers USB Wi-Fi adapters and will warn before using the built-in radio.
+
+---
 
 ## Installation
 
-Netberry is installed via a **single interactive setup script**.
+Netberry installs via a **single interactive setup script**.
 
-In your Pi's terminal, run:
+On a fresh Raspberry Pi OS Lite install:
 
-```bash
+```
 bash <(curl -fsSL https://raw.githubusercontent.com/N8WM/netberry/main/install.sh)
 ```
 
-> This script should be run on a **fresh Raspberry Pi OS Lite install**.
+The installer will:
 
-## Software stack
+- Select an appropriate Wi-Fi interface for AP mode  
+- Configure hostapd and dnsmasq  
+- Install and enroll NetBird  
+- Set up policy routing and NAT  
+- Optionally enable LED health signaling  
+- Install a diagnostic tool (`doctor.sh`)  
 
-- **Raspberry Pi OS Lite (Trixie)**
-- NetworkManager (uplinks)
-- hostapd (Wi-Fi AP)
-- dnsmasq (DHCP)
-- NetBird (VPN)
-- iptables (client-only kill-switch)
-- systemd timers (health checks)
-- sysfs LED control
+---
 
 ## How it works (high level)
 
-Client devices > Netberry Wi-Fi AP (br0) > NetBird tunnel (wt0) > Your home network / exit node
+```
+Client devices
+    ↓
+Netberry Wi-Fi AP (routed, no bridge)
+    ↓
+Policy routing + packet marking
+    ↓
+NetBird tunnel (wt0)
+    ↓
+Your exit node / home network
+```
 
-- Clients **cannot reach the internet** unless the VPN is up
-- The router itself is allowed limited connectivity to recover the VPN
-- LED reflects whether clients would actually have working internet
+- Client packets are **marked and routed into NetBird’s routing table**
+- NetBird’s own nftables rules handle ACLs and NAT
+- Client traffic fails closed if NetBird is unavailable
+- Router traffic remains fail-open to allow recovery
+
+---
 
 ## LED behavior
 
-- **Heartbeat blink** → VPN up, DNS working, clients usable
-- **Solid ON** → VPN down, routing broken, or DNS unavailable
+- **Heartbeat blink**
+  - NetBird control plane connected
+  - Tunnel interface present
+  - DNS resolution working
 
-The LED is debounced and resilient to transient control-plane reconnects.
+- **Solid ON**
+  - NetBird down
+  - Routing broken
+  - DNS unavailable
+
+The LED is debounced to avoid false alarms during brief reconnects.
+
+---
+
+## Diagnostics
+
+After installation, Netberry includes a validation script:
+
+```
+~/netbird-doctor.sh
+```
+
+This checks:
+
+- NetBird control-plane connectivity  
+- Tunnel interface presence  
+- AP mode status  
+- DHCP activity  
+- Policy routing rules  
+- Packet marking  
+- NAT via the tunnel  
+- DNS resolution  
+
+It is safe to run at any time and is also used by the LED logic.
+
+---
 
 ## Recovery & safety guarantees
 
-- You can always SSH into the Pi via its Wi-Fi AP
-- The router never deadlocks itself during VPN reconnects
-- Misconfigured uplinks won’t strand the device
-- Client traffic is fail-closed; router traffic is fail-open (by design)
+- You can always SSH into the Pi via its Wi-Fi AP  
+- The router will not deadlock itself during VPN reconnects  
+- Misconfigured uplinks won’t strand the device  
+- Client traffic is fail-closed; router traffic is fail-open (by design)  
+
+---
 
 ## Disclaimer
 
-This project is provided as-is. You are responsible for complying with local laws, network policies, and employer rules.
+This project is provided as-is.  
+You are responsible for complying with local laws, network policies, and employer rules.
