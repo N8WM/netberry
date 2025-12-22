@@ -6,8 +6,6 @@ Netberry turns a Raspberry Pi into a portable Wi-Fi access point that **forces a
 
 You connect the Pi to an upstream network (typically Ethernet), connect your devices to Netberry’s Wi-Fi, and all client traffic is routed through NetBird.
 
----
-
 ## Key features
 
 - **VPN-enforced client routing**  
@@ -28,16 +26,12 @@ You connect the Pi to an upstream network (typically Ethernet), connect your dev
 - **Deterministic validation**  
   Includes a built-in diagnostic script (`doctor.sh`) to verify routing, NAT, policy rules, and NetBird state.
 
----
-
 ## Use cases
 
 - Traveling with locked-down or work-issued devices  
 - Securing hotel or Airbnb Wi-Fi  
 - Sharing a single VPN tunnel with multiple devices  
 - Temporary remote access to a home lab or LAN  
-
----
 
 ## Requirements
 
@@ -50,8 +44,6 @@ You connect the Pi to an upstream network (typically Ethernet), connect your dev
 
 > The Raspberry Pi’s built-in Wi-Fi (`brcmfmac`) can be unstable in AP mode on newer kernels.  
 > Netberry prefers USB Wi-Fi adapters and will warn before using the built-in radio.
-
----
 
 ## Installation
 
@@ -72,8 +64,6 @@ The installer will:
 - Optionally enable LED health signaling  
 - Install a diagnostic tool (`doctor.sh`)  
 
----
-
 ## How it works (high level)
 
 ```
@@ -93,8 +83,6 @@ Your exit node / home network
 - Client traffic fails closed if NetBird is unavailable
 - Router traffic remains fail-open to allow recovery
 
----
-
 ## LED behavior
 
 - **Heartbeat blink**
@@ -108,8 +96,6 @@ Your exit node / home network
   - DNS unavailable
 
 The LED is debounced to avoid false alarms during brief reconnects.
-
----
 
 ## Diagnostics
 
@@ -132,16 +118,12 @@ This checks:
 
 It is safe to run at any time and is also used by the LED logic.
 
----
-
 ## Recovery & safety guarantees
 
 - You can always SSH into the Pi via its Wi-Fi AP  
 - The router will not deadlock itself during VPN reconnects  
 - Misconfigured uplinks won’t strand the device  
 - Client traffic is fail-closed; router traffic is fail-open (by design)  
-
----
 
 ## Disclaimer
 
