@@ -9,6 +9,7 @@ FAILURES=0
 
 ok() { echo "✔ $*"; }
 warn() { echo "⚠ $*"; }
+detail() { echo "  > $*"; }
 fail() {
   echo "✖ $*"
   FAILURES=$((FAILURES + 1))
@@ -40,7 +41,8 @@ AP_IFACE="$(
 )"
 
 [ -n "$AP_IFACE" ] || {
-  fail "No AP interface detected (iw dev shows no type AP)"
+  fail "No AP interface detected"
+  detail "iw dev shows no type AP"
   exit 1
 }
 
@@ -54,8 +56,8 @@ if netbird status --json | jq -e '.management.connected == true' >/dev/null; the
   ok "NetBird management connected"
 else
   fail "NetBird management not connected"
-  echo "  > Sometimes this can be a false positive"
-  echo "  > Check management connection again with \`netbird status\`"
+  detail "Sometimes this can be a false positive"
+  detail "Check management connection again with \`netbird status\`"
 fi
 
 if ip link show wt0 >/dev/null 2>&1; then
@@ -81,7 +83,8 @@ fi
 if journalctl -u dnsmasq --no-pager 2>/dev/null | grep -q "DHCPACK"; then
   ok "dnsmasq has issued DHCP leases"
 else
-  warn "No DHCP leases observed yet (may be idle)"
+  warn "No DHCP leases observed yet"
+  detail "May be idle"
 fi
 
 ### =========================
@@ -115,7 +118,8 @@ MANGLE_PKTS="$(
 if [ -n "$MANGLE_PKTS" ] && [ "$MANGLE_PKTS" -gt 0 ]; then
   ok "Client traffic is being marked (packets: $MANGLE_PKTS)"
 else
-  warn "No marked client packets yet (connect a client and retry)"
+  warn "No marked client packets yet"
+  detail "Connect a client and retry"
 fi
 
 ### =========================
@@ -130,7 +134,8 @@ NAT_PKTS="$(
 if [ -n "$NAT_PKTS" ] && [ "$NAT_PKTS" -gt 0 ]; then
   ok "NAT activity detected on wt0 (packets: $NAT_PKTS)"
 else
-  warn "No NAT packets yet (connect a client and retry)"
+  warn "No NAT packets yet"
+  detail "Connect a client and retry"
 fi
 
 ### =========================
@@ -164,7 +169,8 @@ if [ -n "$PREROUTING_PKTS" ] && [ "$PREROUTING_PKTS" -gt 0 ] &&
   [ -n "$POSTROUTING_PKTS" ] && [ "$POSTROUTING_PKTS" -gt 0 ]; then
   ok "Forwarded client traffic is marked and NATed via wt0"
 else
-  warn "No forwarded traffic observed yet (connect a client and retry)"
+  warn "No forwarded traffic observed yet"
+  detail "Connect a client and retry"
 fi
 
 ### =========================

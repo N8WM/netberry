@@ -14,6 +14,16 @@ set -euo pipefail
 # - Do NOT rely on FORWARD-chain rules (NetBird manages nftables in the forward path).
 
 ### =========================
+### Welcome
+### =========================
+
+echo "NETBERRY INSTALL WIZARD"
+echo
+echo "This script will set up your Raspberry Pi as a Netberry access point"
+echo "using hostapd and dnsmasq, routing client traffic through NetBird."
+echo
+
+### =========================
 ### Constants
 ### =========================
 
@@ -323,10 +333,10 @@ EOF
 
 need_root_tools
 
-AP_SSID="$(prompt_default "AP SSID" "Netberry")"
+AP_SSID="$(prompt_default "Wi-Fi SSID" "Netberry")"
 
 while true; do
-  read -rsp "AP Passphrase (8–63 chars): " AP_PSK
+  read -rsp "Wi-Fi Passphrase (8–63 chars): " AP_PSK
   echo
   local_len=${#AP_PSK}
   if [ "$local_len" -lt 8 ] || [ "$local_len" -gt 63 ]; then
@@ -476,8 +486,11 @@ sudo systemctl unmask hostapd >/dev/null 2>&1 || true
 sudo systemctl enable hostapd dnsmasq
 sudo systemctl restart hostapd dnsmasq
 
+echo "Running Netberry Doctor Script to verify setup..."
+echo
 doctor "$AP_IFACE"
-
+echo
+echo "You may run the doctor script again at ~/netbird-doctor.sh"
 echo
 echo "AP interface: $AP_IFACE"
 echo "Don't forget to provide your network to the new peer in NetBird!"
