@@ -2,6 +2,7 @@
 set -euo pipefail
 
 REPO="https://github.com/N8WM/netberry.git"
+BRANCH="refactor" # TODO: replace
 UPDATING=0
 
 echo "Installing netberry..."
@@ -31,7 +32,7 @@ if [ ! -d "$LIBDIR" ]; then
 fi
 
 if [ ! -d "$LIBDIR/.git" ]; then
-  git clone $REPO "$LIBDIR"
+  git clone -b "$BRANCH" "$REPO" "$LIBDIR"
 else
   UPDATING=1
   cd "$LIBDIR"
