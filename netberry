@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+source "$(dirname "$0")/core/paths.sh"
+source "$(dirname "$0")/core/lib.sh"
+source "$(dirname "$0")/core/state.sh"
+
+cmd="${1:-}"
+shift || true
+
+init_state
+
+case "$cmd" in
+install)
+  for pkg in "$@"; do
+    sudo bash install_with_deps.sh "$pkg"
+    mark_installed "$pkg"
+  done
+  ;;
+list)
+  jq -r '.installed | keys[]' "$NETBERRY_STATE"
+  ;;
+status)
+  jq . "NETBERRY_STATE"
+  ;;
+*)
+  cat <<EOF
+Netberry Package Manager
+
+Commands:
+  netberry install <pkg>...   Install one or more packages
+  netberry list               List installed packages
+  netberry status             Show netberry state
+EOF
+  ;;
+esac
