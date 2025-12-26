@@ -25,7 +25,7 @@ pkg_installer() {
 }
 
 pkg_ver() {
-  echo "$(jq -r .version "$(pkg_meta "$1")")"
+  jq -r .version "$(pkg_meta "$1")"
 }
 
 pkg_deps() {
@@ -33,7 +33,7 @@ pkg_deps() {
 }
 
 pkg_install() {
-  bash "$(pkg_installer "$1")"
+  sudo bash "$(pkg_installer "$1")"
 }
 
 # Installation
@@ -84,6 +84,11 @@ can_install() {
 
 install_with_deps() {
   local pkg=$1
+
+  if is_installed "$pkg"; then
+    return
+  fi
+
   local ver="$(pkg_ver "$pkg")"
   shift
 

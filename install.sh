@@ -24,12 +24,14 @@ LIBDIR="$PREFIX/lib/netberry"
 BINDIR="$PREFIX/bin"
 
 if [ ! -d "$LIBDIR" ]; then
+  OWNER="${SUDO_USER:-$USER}"
+
   sudo mkdir -p "$LIBDIR"
-  sudo chown "$USER":"$USER" "$LIBDIR"
+  sudo chown "$OWNER":"$OWNER" "$LIBDIR"
 fi
 
 if [ ! -d "$LIBDIR/.git" ]; then
-  git clone $REPO
+  git clone $REPO "$LIBDIR"
 else
   UPDATING=1
   cd "$LIBDIR"
