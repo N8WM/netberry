@@ -32,17 +32,17 @@ if [ ! -d "$LIBDIR" ]; then
 fi
 
 if [ ! -d "$LIBDIR/.git" ]; then
+  rm -rf "$LIBDIR"
   git clone -b "$BRANCH" "$REPO" "$LIBDIR"
 else
   UPDATING=1
-  cd "$LIBDIR"
-  git pull
+  git -C "$LIBDIR" pull
 fi
 
-sudo ln -sf "$LIBDIR/netberry" "$BINDIR/netberry"
 sudo chmod +x "$LIBDIR/netberry"
+sudo ln -sf "$LIBDIR/netberry" "$BINDIR/netberry"
 
 sudo mkdir -p /var/lib/netberry
 sudo chmod 755 /var/lib/netberry
 
-[ $UPDATING -eq 0 ] && echo "\nnetberry installed successfully"
+[ $UPDATING -eq 0 ] && echo && echo "netberry installed successfully"
