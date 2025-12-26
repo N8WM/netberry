@@ -32,7 +32,7 @@ if [ ! -d "$LIBDIR" ]; then
 fi
 
 if [ ! -d "$LIBDIR/.git" ]; then
-  rm -rf "$LIBDIR"
+  sudo rm -rf "$LIBDIR"
   git clone -b "$BRANCH" "$REPO" "$LIBDIR"
 else
   UPDATING=1
