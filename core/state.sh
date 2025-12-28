@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source "$(dirname "$0")/paths.sh"
+source "$NETBERRY_ROOT/core/paths.sh"
 
 init_state() {
   if [ ! -f "$NETBERRY_STATE" ]; then

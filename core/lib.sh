@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-source "$(dirname "$0")/state.sh"
+source "$NETBERRY_ROOT/core/state.sh"
 
 die() {
   echo "ERROR: $*" >&2
