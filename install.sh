@@ -33,10 +33,10 @@ fi
 
 if [ ! -d "$LIBDIR/.git" ]; then
   sudo rm -rf "$LIBDIR"
-  git clone -b "$BRANCH" "$REPO" "$LIBDIR"
+  sudo git clone -b "$BRANCH" "$REPO" "$LIBDIR"
 else
   UPDATING=1
-  git -C "$LIBDIR" pull
+  sudo git -C "$LIBDIR" pull
 fi
 
 sudo chmod +x "$LIBDIR/netberry"
